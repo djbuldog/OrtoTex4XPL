@@ -30,7 +30,10 @@ License:
 
 # TODO: use request with keep-alive for whole square instead of single conn urllib2
 #       http://docs.python-requests.org/en/latest/
-#       http://stackoverflow.com/questions/13030095/how-to-save-requests-python-cookies-to-a-file        
+#       http://stackoverflow.com/questions/13030095/how-to-save-requests-python-cookies-to-a-file
+# TODO: add detection of "too white" pictures... replace tham with alternative map source, param --alternative-source
+#       the picture can be particulary white.. white to trasnparent and merge with alternative?
+# TODO: add simple GUI
 
 import argparse
 import os
