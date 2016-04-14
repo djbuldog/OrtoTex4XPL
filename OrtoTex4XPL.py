@@ -28,6 +28,11 @@ License:
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 '''
 
+# TODO: fix getting gmaps source version
+#       classic maps link is forwarded to new naps
+#       but.. there is still API using old URL format
+#       the version can be read from it
+#       https://maps.googleapis.com/maps/api/js?callback=initMap
 # TODO: use request with keep-alive for whole square instead of single conn urllib2
 #       http://docs.python-requests.org/en/latest/
 #       http://stackoverflow.com/questions/13030095/how-to-save-requests-python-cookies-to-a-file
