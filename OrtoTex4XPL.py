@@ -147,7 +147,7 @@ class GMaps(MapSource):
 		if m:
 			self.c1=m.group(1)
 		else:
-			self.c1=145
+			self.c1=199 #145
 
 class MapyCZ(MapSource):
 
