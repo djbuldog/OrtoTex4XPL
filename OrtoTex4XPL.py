@@ -28,14 +28,8 @@ License:
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 '''
 
-# TODO: fix getting gmaps source version
-#       classic maps link is forwarded to new naps
-#       but.. there is still API using old URL format
-#       the version can be read from it
-#       https://maps.googleapis.com/maps/api/js?callback=initMap
-# TODO: use request with keep-alive for whole square instead of single conn urllib2
-#       http://docs.python-requests.org/en/latest/
-#       http://stackoverflow.com/questions/13030095/how-to-save-requests-python-cookies-to-a-file
+# TODO: follow ter folder
+#       get lat/lng coords from ter files inside folder
 # TODO: add detection of "too white" pictures... replace tham with alternative map source, param --alternative-source
 #       the picture can be particulary white.. white to trasnparent and merge with alternative?
 # TODO: add simple GUI
@@ -44,11 +38,10 @@ import argparse
 import os
 import platform
 import sys
-import urllib2
-import cookielib
+import time
+import requests
 import re
 from PIL import Image
-import cv2
 import thread
 import time
 
@@ -77,6 +70,37 @@ TMP="tmp"
 
 # -------- Classes ----------------
 
+class ForkManager:
+
+	def __init__(self,max):
+		self.maxfork = max
+		self.forks = []
+
+	def wait_finish(self):
+
+		if len(self.forks) > 0:
+			print "Waiting for finishing", len(self.forks), "forks (convert to DDS)"
+			
+		while (len(self.forks)>=self.maxfork):
+			pid, ret = os.waitpid(-1, 0)
+			self.forks.remove(pid)
+
+	def wait_slot(self):
+
+		if len(self.forks)<self.maxfork:
+			return
+
+		print "Waiting for finishing some of", len(self.forks), "forks (convert to DDS)"
+
+		while (len(self.forks)>=self.maxfork):
+			pid, ret = os.waitpid(-1, os.WNOHANG)
+			if (pid): self.forks.remove(pid)
+			if len(self.forks)>=self.maxfork: time.sleep(0.2)
+
+	def add_fork(self, pid):
+		self.forks.append(pid)
+
+
 class MapSource:
 
 	def init_hook(self,data):
@@ -84,75 +108,62 @@ class MapSource:
 	
 	def init_down(self):
 
-		cj = cookielib.LWPCookieJar()
-		opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
-  
-		req = urllib2.Request(self.url_init)
-		req.add_header('accept-language', 'cs-CZ,cs;q=0.8')
-		req.add_header('user-agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36')
+		self.s = requests.Session()
 
+		# session headers
+		headers = {}
+		headers['accept-language'] = 'cs-CZ,cs;q=0.8'
+		headers['user-agent'] = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36'
+		self.s.headers.update(headers)
+		
 		try:
-			f = opener.open(req)
-			self.init_hook(f.read())
-			f.close()
-		except urllib2.URLError, err:
-			print "init_down error:", err.reason, sys.exc_info()[0]
+			r = self.s.get(self.url_init)
+			self.init_hook(r.content)
+
+		except:
+			print "init_down error:", sys.exc_info()[0]
 			sys.exit(1)
 
-		cj.save("{0}/test.cook".format(OUTTMP))	
-
-
 	def down_tile(self,zl,x,y,out):
-
-		cj = cookielib.LWPCookieJar()
-		cj.load("{0}/test.cook".format(OUTTMP))
-		opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
-
-		req = urllib2.Request(self.url_req.format(zl,x,y,self.c1))
-		req.add_header('accept', 'image/webp,*/*;q=0.8')
-		req.add_header('accept-encoding', 'gzip,deflate,sdch')
-		req.add_header('accept-language', 'cs-CZ,cs;q=0.8')
-		req.add_header('user-agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36')
-		req.add_header('referer', self.referer)
-
+	
+		# local headers
+		headers = {}
+		headers['accept'] = 'image/webp,*/*;q=0.8'
+		headers['accept-encoding'] = 'gzip,deflate,sdch'
+		headers['referer'] = self.referer
+		
 		try:
-			f = opener.open(req)
+			r = self.s.get(self.url_req.format(zl,x,y,self.c1), headers=headers)
 
 			webfile = open(out, 'wb')
-			webfile.write(f.read())
+			webfile.write(r.content)
 			webfile.close()
 
-			#cj.save("{0}/test.cook") # it is saved automatically!!
-			f.close()
-
-		except urllib2.URLError, err:
-			print "down_tile error:", err.reason, sys.exc_info()[0]
-			return False
-		except SocketError, err:
-			print "down_tile error:", err.reason, sys.exc_info()[0]
-			return False
 		except:
 			print "down_tile error: unknown", sys.exc_info()[0]
 			return False
-		
+			
 		return True
-		
+
 
 class GMaps(MapSource):
 
 	def __init__(self):
-		self.url_init='http://maps.google.com/maps?&output=classic'
+		#self.url_init='http://maps.google.com/maps?&output=classic'
+		self.url_init='https://maps.googleapis.com/maps/api/js?callback=initMap'
 		self.url_req='https://khms0.google.com/kh/v={3}&src=app&x={1}&y={2}&z={0}&s=Gali'
 		self.referer='https://maps.google.com'
 		self.c1=''
 
 	# assign version to custom1 url req attr
 	def init_hook(self,data):
-		m = re.search("/kh/v=([0-9]+)",data)
+		m = re.search("/kh\?v=([0-9]+)",data)
 		if m:
 			self.c1=m.group(1)
+			print "Detected map version:", self.c1
 		else:
 			self.c1=199 #145
+			print "Warning: Latest map version was not detected!! using last known:", self.c1
 
 class MapyCZ(MapSource):
 
@@ -177,6 +188,7 @@ def fixY(zl,y):
 	return y
 
 def down_square(zl,x,y,ms,cnt=8):
+	start = time.time()
 	print "Downloading square ({0},{1}) {2}x{2} images".format(x,y,cnt)
 	
 	skip=0
@@ -197,9 +209,12 @@ def down_square(zl,x,y,ms,cnt=8):
 	
 	if skip:
 		print "- skipped",skip,"of",cnt*cnt,"(already downloaded)"
+	else:
+		print "Downloading took", time.time()-start, "s"
 
 
 def merge_square(zl,x,y,cnt=8):
+	start = time.time()
 	print "Merging square ({0},{1}) {2}x{2} images".format(x,y,cnt)
 
 	final = Image.new('RGB', (256*cnt,256*cnt))
@@ -220,6 +235,8 @@ def merge_square(zl,x,y,cnt=8):
 		final.thumbnail((2048,2048), Image.ANTIALIAS)
 
 	final.save(FILEIMG.format(zl,x,fixY(zl,y)))
+	print "Marging took", time.time()-start, "s"
+
 
 def remove_logo(orig, child):
 	print "Removing logo in square"
@@ -257,17 +274,14 @@ def create_pol(zl,x,y):
 def convert_to_dds(tile_fname,dds_fname):
 
 	print "Converting img to DDS"
-
-	if not os.path.isfile(DDSBIN):
-		print "- cannot find DDSTool binary (" + DDSBIN + ")"
-		return None
-
 	cmd="\"" + DDSBIN + "\" --png2dxt1 arg1 arg2 \"" + tile_fname + "\" \"" + dds_fname + "\""
 	print "- command:", cmd
 	newRef=os.fork()
 	if newRef==0:
+		start = time.time()
 		os.system(cmd)
 		os.remove(tile_fname)
+		print "DDS convert took", time.time()-start, "s (fork with pid " + str(os.getpid()) + ")" 
 		sys.exit(0)
 	#print "-----------------------------------------------"
 	print "- forking... child pid is", newRef
@@ -342,7 +356,9 @@ parser.add_argument('lng', type=float, help='GPS longtitude -- for ex. 16.666259
 parser.add_argument('--coord2', nargs=2, type=float, metavar=('lat','lng'), help='Second GPS coordinates (lower right corner)')
 parser.add_argument('--remove-logo', action='store_true', help='try to remove logo merging with higher zoom level')
 parser.add_argument('--keep-downloaded', action='store_true', help='do not delete temporary img files after processing')
-parser.add_argument('--dds-textures', action='store_true', help='convert textures to dds (instead of png) -- default: png')
+parser.add_argument('--dds-textures', action='store_true', help='enable converting textures to dds (instead of png)')
+parser.add_argument('--dds-maxcpu', metavar='<num>', type=int, default=2, help='maximum CPU cores used for DDS converting')
+parser.add_argument('--wed-import', action='store_true', help='enable creating DSF and POL files for import orto to WED')
 args = parser.parse_args()
 
 Zl=args.zl
@@ -355,6 +371,21 @@ if args.coord2 is not None:
 else:
 	Lat2=Lat1
 	Lng2=Lng1
+
+if args.remove_logo:
+	try:
+		import cv2
+	except:
+		print "removing logo feature cannot be enabled.. missing OpenCV library"
+		os.exit(0)
+
+if args.wed_import and not os.path.isfile(DSFBIN):
+	print "Cannot find DSF tool", DSFBIN
+	sys.exit(0)
+	
+if args.dds_textures and not os.path.isfile(DDSBIN):
+	print "Cannot find DDS tool", DDSBIN
+	sys.exit(0)
 
 print "--- Input:"
 print "Zl="+str(Zl)
@@ -413,13 +444,20 @@ if not os.path.isdir(OUTTMP):os.mkdir(OUTTMP)
 if not os.path.isdir(OUTDSF):os.mkdir(OUTDSF)
 	
 ms.init_down()
-dds_pid = None
+fman = ForkManager(args.dds_maxcpu)
+
+squares_start = time.time()
+squares_cur = 0
+squares_all = int((xyr2[1]+8-xyr1[1])*(xyr2[0]+8-xyr1[0])/64)
+print "Total number of files to download: " + str((xyr2[1]+8-xyr1[1])*(xyr2[0]+8-xyr1[0])) + " (" + str(xyr2[0]+8-xyr1[0]) + "*" + str(xyr2[1]+8-xyr1[1]) + ")"
+print "Total number of squares to create: " + str(squares_all)
 
 for y in range(xyr1[1],xyr2[1]+8,8):
 	for x in range(xyr1[0],xyr2[0]+8,8):
 
 		tile_fname = FILEIMG.format(int(Zl),int(x),int(fixY(Zl,y)))
 		dds_fname = os.path.splitext(tile_fname)[0] + ".dds"
+		pol_fname = FILEPOL.format(int(Zl),int(x),int(fixY(Zl,y)));
 		child_fname= FILEIMG.format(int(Zl+1),int(x*2),int(fixY(Zl+1,y*2)))
 
 		if args.dds_textures and os.path.isfile(dds_fname):
@@ -439,9 +477,12 @@ for y in range(xyr1[1],xyr2[1]+8,8):
 		if not os.path.isfile(tile_fname):
 			down_square(int(Zl),x,y,ms)
 			merge_square(int(Zl),x,y)
-			create_pol(int(Zl),x,y)
 		else:
 			print "- skipped file", tile_fname, "(already exits)"
+		squares_cur += 1
+
+		if args.wed_import and not os.path.isfile(pol_fname):
+			create_pol(int(Zl),x,y)
 
 		# removing logo
 		if args.remove_logo and os.path.isfile(child_fname):
@@ -449,15 +490,11 @@ for y in range(xyr1[1],xyr2[1]+8,8):
 		
 		# convert img to dds	
 		if args.dds_textures:
-			if dds_pid != None:
-				print "Waiting for pid", dds_pid, "(convert to DDS)"
-				os.waitpid(dds_pid,0)
-			dds_pid = convert_to_dds(tile_fname,dds_fname)
+			fman.wait_slot()
+			fman.add_fork(convert_to_dds(tile_fname,dds_fname))
+			
+		print "*** Finished " + str(squares_cur/(squares_all/100)) + "% (" + str(squares_cur) + " of " + str(squares_all) + ") squares in time", time.time()-squares_start
 
-prepare_dsf()
-
-if dds_pid != None:
-	print "Waiting for pid", dds_pid, "(convert to DDS)"
-	os.waitpid(dds_pid,0)
-	
+if args.wed_import: prepare_dsf()
+fman.wait_finish()	
 

@@ -10,7 +10,7 @@ Can be used for:
 <pre>
 usage: OrtoTex4XPL.py [-h] [--zl <level>] [--src {gmaps,mapy}] [--base <path>]
                       [--coord2 lat lng] [--remove-logo] [--keep-downloaded]
-                      [--dds-textures]
+                      [--dds-textures] [--dds-maxcpu <num>] [--wed-import]
                       lat lng
 
 positional arguments:
@@ -19,13 +19,15 @@ positional arguments:
 
 optional arguments:
   -h, --help          show this help message and exit
-  --zl &lt;level&gt;        required map zoom level (10-24) -- default: 18
+  --zl <level>        required map zoom level (10-24) -- default: 18
   --src {gmaps,mapy}  map source (mapy.cz, google maps) -- default: gmaps
-  --base &lt;path&gt;       output directory base -- default: /tmp/orto4xpl
+  --base <path>       output directory base -- default: /tmp/orto4xpl
   --coord2 lat lng    Second GPS coordinates (lower right corner)
   --remove-logo       try to remove logo merging with higher zoom level
   --keep-downloaded   do not delete temporary img files after processing
-  --dds-textures      convert textures to dds (instead of png) -- default: png
+  --dds-textures      enable converting textures to dds (instead of png)
+  --dds-maxcpu <num>  maximum CPU cores used for DDS converting
+  --wed-import        enable creating DSF and POL files for import orto to WED
 </pre>
 
 ##Requires
@@ -33,7 +35,7 @@ optional arguments:
 The script is tested on GNU Linux (Debian) and Windows 7.
 
 * Python 2.7+
-* OpenCV python module (cv2)
+* OpenCV python module (cv2) (optional)
 * [mercator.py](https://raw.githubusercontent.com/hrldcpr/mercator.py/master/mercator.py)
 * [DDStool, DSFtool](http://developer.x-plane.com/tools/xptools/)
 
