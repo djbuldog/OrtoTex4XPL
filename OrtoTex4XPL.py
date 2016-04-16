@@ -106,9 +106,10 @@ class MapSource:
 
 	def __init__(self):
 		self.req_left = 0
-		self.url_init=''
-		self.url_req=''
-		self.referer=''
+		self.url_init=None
+		self.url_req=None
+		self.referer=None
+		self.s=None
 
 	def init_down_hook(self,data):
 		pass
@@ -161,6 +162,7 @@ class MapSource:
 
 		if self.req_left<1:
 			print "Reached max requests per session.. creating new session"
+			if self.s is not None: self.s.close()
 			self.init_down()
 
 		self.req_left -= 1
@@ -222,8 +224,12 @@ class MapyCZ(MapSource):
 	def __init__(self):
 		MapSource.__init__(self)
 		self.url_init='http://mapy.cz'
-		self.url_req='http://m2.mapserver.mapy.cz/ophoto-m/{0}-{1}-{2}'
 		self.referer='http://mapy.cz/letecka?x=16.6708841&y=49.1532619&z=18'
+
+	def init_down_hook(self,data):
+		server=random.randint(1,4)
+		self.url_req='http://m'+str(server)+'.mapserver.mapy.cz/ophoto-m/{0}-{1}-{2}'
+
 
 # -------- Functions ----------------
 
@@ -498,10 +504,12 @@ print latlng2
 print "--- Processing"
 
 if not os.path.isdir(OUTPUT):os.mkdir(OUTPUT)
-if not os.path.isdir(OUTPOL):os.mkdir(OUTPOL)
 if not os.path.isdir(OUTTEX):os.mkdir(OUTTEX)
 if not os.path.isdir(OUTTMP):os.mkdir(OUTTMP)
-if not os.path.isdir(OUTDSF):os.mkdir(OUTDSF)
+
+if args.wed_import:
+	if not os.path.isdir(OUTDSF):os.mkdir(OUTDSF)
+	if not os.path.isdir(OUTPOL):os.mkdir(OUTPOL)
 
 fman = ForkManager(args.dds_maxcpu)
 

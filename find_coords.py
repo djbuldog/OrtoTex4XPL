@@ -37,6 +37,6 @@ if len(sys.argv) != 2:
 	sys.exit(0)
 
 lat1, lng1, lat2, lng2 = getCoordsFromTer(sys.argv[1])
-print lat1, lng1, "-", lat2, lng2
+print lat1, lng1, "--coord2", lat2, lng2
 
 
