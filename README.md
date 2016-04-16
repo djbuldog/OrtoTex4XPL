@@ -19,14 +19,14 @@ positional arguments:
 
 optional arguments:
   -h, --help          show this help message and exit
-  --zl <level>        required map zoom level (10-24) -- default: 18
+  --zl &lt;level>        required map zoom level (10-24) -- default: 18
   --src {gmaps,mapy}  map source (mapy.cz, google maps) -- default: gmaps
-  --base <path>       output directory base -- default: /tmp/orto4xpl
+  --base &lt;path>       output directory base -- default: /tmp/orto4xpl
   --coord2 lat lng    Second GPS coordinates (lower right corner)
   --remove-logo       try to remove logo merging with higher zoom level
   --keep-downloaded   do not delete temporary img files after processing
   --dds-textures      enable converting textures to dds (instead of png)
-  --dds-maxcpu <num>  maximum CPU cores used for DDS converting
+  --dds-maxcpu &lt;num>  maximum CPU cores used for DDS converting
   --wed-import        enable creating DSF and POL files for import orto to WED
 </pre>
 
@@ -78,5 +78,12 @@ and second top right. Coorect coords for the script are 50.021858 16.018066 and 
 
 <pre>
 OrtoTex4XPL.py --zl16 50.021858 16.018066 --coord2 48.994637 17.028809 --keep-downloaded
+</pre>
+
+**NEW:** You can also use script *find_coords.py* for getting coordinates (tested in Linux only)
+
+<pre>
+./find_coords.py /opt/X-Plane\ 10/Custom\ Scenery/z_CZ_49_16-terrain/terrain/
+50.021858 16.018066 - 48.994637 17.028809
 </pre>
 
