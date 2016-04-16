@@ -4,7 +4,7 @@
 OrtoTex4XPL - Orto textures for X-Plane script
 
 Author: Jan Bariencik (lktb@bari2.eu)
-Version: 20160203
+Version: 20160416
 
 THIS SCRIPT IS FOR STUDYING PURPOSE ONLY!!! USE AT YOUR OWN RISK!! 
 
@@ -44,6 +44,7 @@ import re
 from PIL import Image
 import thread
 import time
+import random
 
 # https://raw.githubusercontent.com/hrldcpr/mercator.py/master/mercator.py
 import mercator
@@ -103,76 +104,127 @@ class ForkManager:
 
 class MapSource:
 
-	def init_hook(self,data):
+	def __init__(self):
+		self.req_left = 0
+		self.url_init=''
+		self.url_req=''
+		self.referer=''
+
+	def init_down_hook(self,data):
 		pass
-	
+
 	def init_down(self):
+
+		ua = [ 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36',
+		       'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36',
+		       'Mozilla/5.0 (Windows NT 6.4; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2225.0 Safari/537.36',
+		       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1944.0 Safari/537.36',
+		       'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.93 Safari/537.36',
+		       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.1 Safari/537.36',
+		       'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.1',
+		       'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+		       'Mozilla/5.0 (X11; Linux x86_64; rv:45.0) Gecko/20100101 Firefox/45.0',
+		       'Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; AS; rv:11.0) like Gecko',
+		       'Mozilla/5.0 (compatible, MSIE 11, Windows NT 6.3; Trident/7.0; rv:11.0) like Gecko',
+		       'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 7.0; InfoPath.3; .NET CLR 3.1.40767; Trident/6.0; en-IN)',
+		       'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)',
+		       'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/6.0)',
+		       'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/5.0)',
+		       'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/4.0; InfoPath.2; SV1; .NET CLR 2.0.50727; WOW64)',
+		       'Mozilla/5.0 (compatible; MSIE 10.0; Macintosh; Intel Mac OS X 10_7_3; Trident/6.0)',
+		       'Mozilla/4.0 (Compatible; MSIE 8.0; Windows NT 5.2; Trident/6.0)',
+		       'Mozilla/4.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/5.0)',
+		       'Mozilla/1.22 (compatible; MSIE 10.0; Windows 3.1)' ]
+
+		self.req_left = random.randint(5000,6400)
+		print "Requests per session set to", self.req_left
 
 		self.s = requests.Session()
 
 		# session headers
 		headers = {}
 		headers['accept-language'] = 'cs-CZ,cs;q=0.8'
-		headers['user-agent'] = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36'
+		headers['user-agent'] = random.choice(ua)
 		self.s.headers.update(headers)
-		
+
+		print "Used UA:", headers['user-agent']
+
 		try:
 			r = self.s.get(self.url_init)
-			self.init_hook(r.content)
+			self.init_down_hook(r.content)
 
 		except:
-			print "init_down error:", sys.exc_info()[0]
+			print "Err:", sys.exc_info()[0]
 			sys.exit(1)
 
 	def down_tile(self,zl,x,y,out):
-	
+
+		if self.req_left<1:
+			print "Reached max requests per session.. creating new session"
+			self.init_down()
+
+		self.req_left -= 1
+
 		# local headers
 		headers = {}
 		headers['accept'] = 'image/webp,*/*;q=0.8'
 		headers['accept-encoding'] = 'gzip,deflate,sdch'
 		headers['referer'] = self.referer
-		
+
+		cookies = {}
+		#cookies['GOOGLE_ABUSE_EXEMPTION']='ID=932e246796d3345d:T.........oNQbHx1hAimw;'
+
 		try:
-			r = self.s.get(self.url_req.format(zl,x,y,self.c1), headers=headers)
+			r = self.s.get(self.url_req.format(zl,x,y), headers=headers, cookies=cookies)
+			if int(r.status_code) > 300:
+				print "Err: Bad HTTP response code (" + str(r.status_code) + ") from " + self.url_req.format(zl,x,y)
+				return False
+
+			if r.headers['content-type'] != 'image/jpeg': 
+				print "Err: Bad content type (" + r.headers['content-type'] + ") from " + self.url_req.format(zl,x,y)
+				return False
 
 			webfile = open(out, 'wb')
 			webfile.write(r.content)
 			webfile.close()
 
 		except:
-			print "down_tile error: unknown", sys.exc_info()[0]
+			print "Err:", sys.exc_info()[0], "from", self.url_req.format(zl,x,y)
 			return False
-			
+
 		return True
 
 
 class GMaps(MapSource):
 
 	def __init__(self):
+		MapSource.__init__(self)
 		#self.url_init='http://maps.google.com/maps?&output=classic'
 		self.url_init='https://maps.googleapis.com/maps/api/js?callback=initMap'
-		self.url_req='https://khms0.google.com/kh/v={3}&src=app&x={1}&y={2}&z={0}&s=Gali'
 		self.referer='https://maps.google.com'
-		self.c1=''
+		self.c1=0
 
-	# assign version to custom1 url req attr
-	def init_hook(self,data):
-		m = re.search("/kh\?v=([0-9]+)",data)
-		if m:
-			self.c1=m.group(1)
-			print "Detected map version:", self.c1
-		else:
-			self.c1=199 #145
-			print "Warning: Latest map version was not detected!! using last known:", self.c1
+	# assign version and server number to custom1 url req attr
+	def init_down_hook(self,data):
+		if self.c1 == 0:
+			m = re.search("/kh\?v=([0-9]+)",data)
+			if m:
+				self.c1=m.group(1)
+				print "Detected map version:", self.c1
+			else:
+				self.c1=199 #145
+				print "Warning: Latest map version was not detected!! using last known:", self.c1
+		server=random.randint(0,3)
+		self.url_req='https://khms'+str(server)+'.google.com/kh/v='+str(self.c1)+'&src=app&x={1}&y={2}&z={0}&s=Gali'
 
 class MapyCZ(MapSource):
 
 	def __init__(self):
+		MapSource.__init__(self)
 		self.url_init='http://mapy.cz'
 		self.url_req='http://m2.mapserver.mapy.cz/ophoto-m/{0}-{1}-{2}'
 		self.referer='http://mapy.cz/letecka?x=16.6708841&y=49.1532619&z=18'
-		self.c1=''
-  
+
 # -------- Functions ----------------
 
 def fixY(zl,y):
@@ -190,7 +242,7 @@ def fixY(zl,y):
 def down_square(zl,x,y,ms,cnt=8):
 	start = time.time()
 	print "Downloading square ({0},{1}) {2}x{2} images".format(x,y,cnt)
-	
+
 	skip=0
 	for yi in range(y,y+cnt):
 		for xi in range(x,x+cnt):
@@ -203,10 +255,12 @@ def down_square(zl,x,y,ms,cnt=8):
 						print "Waiting 3s for re-download"
 						time.sleep(3)
 						max_try -= 1
-						if max_try == 0: done = True
+						if max_try == 0: 
+							print "Download failed - exiting"
+							sys.exit(1)
 			else:
 				skip+=1
-	
+
 	if skip:
 		print "- skipped",skip,"of",cnt*cnt,"(already downloaded)"
 	else:
@@ -221,14 +275,19 @@ def merge_square(zl,x,y,cnt=8):
 	for yi in range(y,y+cnt):
 		for xi in range(x,x+cnt):
 			if os.path.isfile(FILEIMGTMP.format(zl,x,y,xi,yi)):
-				one = Image.open(FILEIMGTMP.format(zl,x,y,xi,yi))
+				try:
+					one = Image.open(FILEIMGTMP.format(zl,x,y,xi,yi))
+				except IOError:
+					print "Err: invalid img", FILEIMGTMP.format(zl,x,y,xi,yi)
+					sys.exit(1)
 				final.paste(one, ((xi-x)*256,(yi-y)*256))
 				
 				if not args.keep_downloaded:
 					os.remove(FILEIMGTMP.format(zl,x,y,xi,yi))
 					
 			else:
-				print "Img",FILEIMGTMP.format(zl,x,y,xi,yi),"not found!!!"
+				print "Err: img",FILEIMGTMP.format(zl,x,y,xi,yi),"not found!!!"
+				sys.exit(1)
 
 	# change size
 	if cnt>8:
@@ -261,13 +320,13 @@ def create_pol(zl,x,y):
 	pol.write("LAYER_GROUP airports -1\n")
 	pol.write("SCALE 25 25\n")
 	pol.close()
-	
+
 	dsfin = open(OUTTMP+"/dsf.in.txt", 'a')
 	dsfin.write(POL+"/"+FILEBASE.format(zl,x,y)+".pol, ")
-		
+
 	leftUpLat, leftUpLng = mercator.get_tile_lat_lng(zl,x,y)
 	rightDownLat, rightDownLng = mercator.get_tile_lat_lng(zl,x+8,y+8)
-	
+
 	dsfin.write("{0:.8f}, {1:.8f}, {2:.8f}, {3:.8f}, \n".format(leftUpLat,rightDownLat,leftUpLng,rightDownLng))
 	dsfin.close()
 
@@ -286,16 +345,17 @@ def convert_to_dds(tile_fname,dds_fname):
 	#print "-----------------------------------------------"
 	print "- forking... child pid is", newRef
 	return newRef
-	
+
 def prepare_dsf():
 	print "Creating DSF"
 
 	if not os.path.isfile(OUTTMP+"/dsf.in.txt"):
 		if os.path.isfile(OUTTMP+"/dsf.txt"):
 			print "- skipped dsf file (already created)"
+			return
 		else:
 			print "- dsf.in file is missing"
-		sys.exit(0)
+			sys.exit(1)
 
 	dsf = open(OUTTMP+"/dsf.txt",'w')
 	dsfin = open(OUTTMP+"/dsf.in.txt", 'r')
@@ -304,7 +364,7 @@ def prepare_dsf():
 	words = lines[0].split(', ')
 	lat = int(words[1].split('.')[0])
 	lng = int(words[3].split('.')[0])
-	
+
 	dsf.write("PROPERTY sim/planet earth\n")
 	dsf.write("PROPERTY sim/overlay 1\n")
 	dsf.write("PROPERTY sim/require_object 1/0\n")
@@ -323,7 +383,7 @@ def prepare_dsf():
 	dsf.write('\n')
 	for line in lines:
 		words = line.split(', ')
-		
+
 		dsf.write("BEGIN_POLYGON {0} 65535 4\n".format(i))
 		dsf.write("BEGIN_WINDING\n")
 		dsf.write("POLYGON_POINT {0}	{1}	0.00000000	0.00000000\n".format(words[3],words[2]))
@@ -336,9 +396,9 @@ def prepare_dsf():
 
 	dsfin.close()
 	dsf.close()
-   
+
 	os.remove(OUTTMP+"/dsf.in.txt")
-	
+
 	cmd="\""+DSFBIN+"\" --text2dsf \""+OUTTMP+"/dsf.txt\" \""+OUTDSF+"/+"+str(lat)+"+"+str(lng)+".dsf\""
 	print "Command:", cmd
 	os.system(cmd)
@@ -393,7 +453,7 @@ print "Lat1="+str(Lat1)
 print "Lng1="+str(Lng1)
 print "Lat2="+str(Lat2)
 print "Lng2="+str(Lng2)
-	
+
 if Lat2>Lat1 or Lng2<Lng1:
 	print "Info: Right corrner must be lower or equal to left"
 	parser.help();
@@ -442,8 +502,7 @@ if not os.path.isdir(OUTPOL):os.mkdir(OUTPOL)
 if not os.path.isdir(OUTTEX):os.mkdir(OUTTEX)
 if not os.path.isdir(OUTTMP):os.mkdir(OUTTMP)
 if not os.path.isdir(OUTDSF):os.mkdir(OUTDSF)
-	
-ms.init_down()
+
 fman = ForkManager(args.dds_maxcpu)
 
 squares_start = time.time()
@@ -462,6 +521,7 @@ for y in range(xyr1[1],xyr2[1]+8,8):
 
 		if args.dds_textures and os.path.isfile(dds_fname):
 			print "- skipped file", dds_fname, "(already exits)"
+			squares_cur += 1
 			continue
 
 		# preparing child tile (zl+1) for removing logo
@@ -479,7 +539,6 @@ for y in range(xyr1[1],xyr2[1]+8,8):
 			merge_square(int(Zl),x,y)
 		else:
 			print "- skipped file", tile_fname, "(already exits)"
-		squares_cur += 1
 
 		if args.wed_import and not os.path.isfile(pol_fname):
 			create_pol(int(Zl),x,y)
@@ -487,14 +546,15 @@ for y in range(xyr1[1],xyr2[1]+8,8):
 		# removing logo
 		if args.remove_logo and os.path.isfile(child_fname):
 			remove_logo(tile_fname,child_fname)
-		
+
 		# convert img to dds	
 		if args.dds_textures:
 			fman.wait_slot()
 			fman.add_fork(convert_to_dds(tile_fname,dds_fname))
-			
+
+		squares_cur += 1
 		print "*** Finished " + str(squares_cur/(squares_all/100)) + "% (" + str(squares_cur) + " of " + str(squares_all) + ") squares in time", time.time()-squares_start
 
 if args.wed_import: prepare_dsf()
-fman.wait_finish()	
+fman.wait_finish()
 
