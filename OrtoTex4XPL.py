@@ -4,7 +4,7 @@
 OrtoTex4XPL - Orto textures for X-Plane script
 
 Author: Jan Bariencik (lktb@bari2.eu)
-Version: 20160416
+Version: 20160417
 
 THIS SCRIPT IS FOR STUDYING PURPOSE ONLY!!! USE AT YOUR OWN RISK!! 
 
@@ -30,8 +30,6 @@ License:
 
 # TODO: follow ter folder
 #       get lat/lng coords from ter files inside folder
-# TODO: add detection of "too white" pictures... replace tham with alternative map source, param --alternative-source
-#       the picture can be particulary white.. white to trasnparent and merge with alternative?
 # TODO: add simple GUI
 
 import argparse
@@ -41,6 +39,8 @@ import sys
 import time
 import requests
 import re
+import cv2
+import numpy as np
 from PIL import Image
 import thread
 import time
@@ -158,6 +158,12 @@ class MapSource:
 			print "Err:", sys.exc_info()[0]
 			sys.exit(1)
 
+	def isCornerWhite(self,data):
+		img_array = np.asarray(bytearray(data), dtype=np.uint8)
+		img = cv2.imdecode(img_array, cv2.CV_LOAD_IMAGE_GRAYSCALE)
+		img = cv2.resize(img, (64,64))
+		return img[0,0]==255 or img[0,63]==255 or img[63,0] == 255 or img[63,63] == 255
+
 	'''
 	retval:
 	0 - ok
@@ -199,6 +205,10 @@ class MapSource:
 			if r.headers['content-type'] != 'image/jpeg': 
 				print "Err: Bad content type (" + r.headers['content-type'] + ") from " + self.url_req.format(zl,x,y)
 				return 3
+
+			if self.isCornerWhite(r.content):
+				print "Warn: too white img", self.url_req.format(zl,x,y)
+				return 2
 
 			webfile = open(out, 'wb')
 			webfile.write(r.content)
@@ -287,7 +297,7 @@ def down_square(zl,x,y,pms,ams,cnt=8):
 									print "Waiting 3s for re-download (alternative source)"
 									max_try -= 1
 									time.sleep(3)
-								if ret == 3 or max_try == 0:
+								if ret == 2 or ret == 3 or max_try == 0:
 									print "Download failed - exiting"
 									sys.exit(1)
 							missing+=1
@@ -477,13 +487,6 @@ if args.coord2 is not None:
 else:
 	Lat2=Lat1
 	Lng2=Lng1
-
-if args.remove_logo:
-	try:
-		import cv2
-	except:
-		print "removing logo feature cannot be enabled.. missing OpenCV library"
-		os.exit(0)
 
 if args.wed_import and not os.path.isfile(DSFBIN):
 	print "Cannot find DSF tool", DSFBIN
