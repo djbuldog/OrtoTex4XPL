@@ -158,16 +158,23 @@ class MapSource:
 			print "Err:", sys.exc_info()[0]
 			sys.exit(1)
 
+	'''
+	retval:
+	0 - ok
+	1 - something wrong => retry
+	2 - missing area => exit or try another source
+	3 - permanent problem => exit
+	'''
 	def down_tile(self,zl,x,y,out):
 
 		if self.req_left<1:
-			print "Reached max requests per session.. creating new session"
+			print "Creating new download session"
 			if self.s is not None: self.s.close()
 			self.init_down()
 
 		self.req_left -= 1
 
-		# local headers
+		# local headers and cookies
 		headers = {}
 		headers['accept'] = 'image/webp,*/*;q=0.8'
 		headers['accept-encoding'] = 'gzip,deflate,sdch'
@@ -178,23 +185,31 @@ class MapSource:
 
 		try:
 			r = self.s.get(self.url_req.format(zl,x,y), headers=headers, cookies=cookies)
+
+			# png content - for example: missing img for area
+			if r.headers['content-type'] == 'image/png': 
+				return 2
+
+			# bad HTTP code - for example: bad URL, temporary ban for IP, ...
 			if int(r.status_code) > 300:
 				print "Err: Bad HTTP response code (" + str(r.status_code) + ") from " + self.url_req.format(zl,x,y)
-				return False
+				return 3
 
+			# unknown content - for example: text with information about IP ban
 			if r.headers['content-type'] != 'image/jpeg': 
 				print "Err: Bad content type (" + r.headers['content-type'] + ") from " + self.url_req.format(zl,x,y)
-				return False
+				return 3
 
 			webfile = open(out, 'wb')
 			webfile.write(r.content)
 			webfile.close()
 
 		except:
+			# unkwn error - probably a connection problem
 			print "Err:", sys.exc_info()[0], "from", self.url_req.format(zl,x,y)
-			return False
+			return 1
 
-		return True
+		return 0
 
 
 class GMaps(MapSource):
@@ -245,27 +260,51 @@ def fixY(zl,y):
 		
 	return y
 
-def down_square(zl,x,y,ms,cnt=8):
+def down_square(zl,x,y,pms,ams,cnt=8):
 	start = time.time()
 	print "Downloading square ({0},{1}) {2}x{2} images".format(x,y,cnt)
 
 	skip=0
+	missing=0
 	for yi in range(y,y+cnt):
 		for xi in range(x,x+cnt):
 			if not os.path.isfile(FILEIMGTMP.format(zl,x,y,xi,yi)):
 				max_try = 3
-				done = False
-				while (done == False):
-					done = ms.down_tile(zl,xi,yi, FILEIMGTMP.format(zl,x,y,xi,yi))
-					if not done:
+				ret = -1
+				while (ret != 0):
+
+					ret = pms.down_tile(zl,xi,yi, FILEIMGTMP.format(zl,x,y,xi,yi))
+					if ret == 1:
 						print "Waiting 3s for re-download"
-						time.sleep(3)
 						max_try -= 1
-						if max_try == 0: 
-							print "Download failed - exiting"
+						time.sleep(3)
+
+					if ret == 2:
+						if ams is not None:
+							while (ret != 0):
+								ret = ams.down_tile(zl,xi,yi, FILEIMGTMP.format(zl,x,y,xi,yi))
+								if ret == 1:
+									print "Waiting 3s for re-download (alternative source)"
+									max_try -= 1
+									time.sleep(3)
+								if ret == 3 or max_try == 0:
+									print "Download failed - exiting"
+									sys.exit(1)
+							missing+=1
+						else:
+							lat, tmp, lng, tmp = mercator.get_tile_box(zl,xi,yi)
+							print "Missing tile ("+str(xi)+","+str(yi)+" - GPS: "+str(lat)+" "+str(lng)+"). Download failed - exiting"
 							sys.exit(1)
+
+					if ret == 3 or max_try == 0:
+						print "Download failed - exiting"
+						sys.exit(1)
+
 			else:
 				skip+=1
+
+	if missing:
+		print "- missing",missing,"of",cnt*cnt,"(downloaded from alternative source)"
 
 	if skip:
 		print "- skipped",skip,"of",cnt*cnt,"(already downloaded)"
@@ -425,6 +464,7 @@ parser.add_argument('--keep-downloaded', action='store_true', help='do not delet
 parser.add_argument('--dds-textures', action='store_true', help='enable converting textures to dds (instead of png)')
 parser.add_argument('--dds-maxcpu', metavar='<num>', type=int, default=2, help='maximum CPU cores used for DDS converting')
 parser.add_argument('--wed-import', action='store_true', help='enable creating DSF and POL files for import orto to WED')
+parser.add_argument('--fix-missing', action='store_true', help='use alternative (google maps) source for missing tiles')
 args = parser.parse_args()
 
 Zl=args.zl
@@ -465,10 +505,13 @@ if Lat2>Lat1 or Lng2<Lng1:
 	parser.help();
 	sys.exit(0)
 
+ams = None
 if args.src == "gmaps":
-	ms = GMaps()
+	pms = GMaps()
 else:
-	ms = MapyCZ()
+	pms = MapyCZ()
+	if args.fix_missing:
+		ams = GMaps()
 
 OUTPUT=args.base+'/'
 
@@ -536,14 +579,14 @@ for y in range(xyr1[1],xyr2[1]+8,8):
 		if args.remove_logo:	
 
 			if (not os.path.isfile(child_fname)) and (not os.path.isfile(tile_fname)):
-				down_square(int(Zl+1),x*2,y*2,ms,16)
+				down_square(int(Zl+1),x*2,y*2,pms,ams,16)
 				merge_square(int(Zl+1),x*2,y*2,16)
 			else:
 				print "- skipped file", child_fname, "(already exits or merged)"
 
 		# preparing tile
 		if not os.path.isfile(tile_fname):
-			down_square(int(Zl),x,y,ms)
+			down_square(int(Zl),x,y,pms,ams)
 			merge_square(int(Zl),x,y)
 		else:
 			print "- skipped file", tile_fname, "(already exits)"
